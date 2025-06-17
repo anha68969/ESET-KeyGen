@@ -1,0 +1,107 @@
+name: scheduled generator
+
+on:
+  schedule:
+    - cron: '0 21 * * *' # Runs at 9 PM UTC (4 AM UTC+7)
+  workflow_dispatch:
+    inputs:
+      account:
+        description: 'Number of Accounts to be generated (default = 1)'
+        required: false
+        default: '1'
+      key:
+        description: 'Number of Keys to be generated (default = 0)'
+        required: false
+        default: '2'
+      mail:
+        description: 'Choose the mail provider to generate license'
+        required: true
+        type: choice
+        options:
+        - 1secmail
+        - guerrillamail
+        - developermail
+        - mailticking
+        - fakemail
+        - inboxes
+        - incognitomail
+        default: fakemail
+      key_type:
+        description: 'Modes of operation'
+        required: true
+        type: choice
+        options:
+        - --key
+        - --small-business-key
+        - --vpn-codes
+        default: --vpn-codes
+      os:
+        description: 'Operating System of runner'
+        required: true
+        type: choice
+        options:
+        - macOS
+        - Linux
+        - Windows
+        default: Linux
+      branch:
+        description: "Repository branch (don't touch it if you don't know what it is!!!)"
+        required: false
+        type: choice
+        options:
+        - main
+        - test
+        default: main
+
+jobs:
+  Generate:
+    runs-on: ${{ github.event.inputs.os || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate key
+        run: |
+          ACCOUNT=${{ github.event.inputs.account || '1' }}
+          KEY=${{ github.event.inputs.key || '0' }}
+          MAIL=${{ github.event.inputs.mail || 'fakemail' }}
+          KEY_TYPE=${{ github.event.inputs.key_type || '--key' }}
+          BRANCH=${{ github.event.inputs.branch || 'main' }}
+
+          git clone -b ${BRANCH} https://github.com/rzc0d3r/ESET-KeyGen.git
+          cd ESET-KeyGen
+          
+          # Setup env
+          sudo apt update
+          sudo apt install -y python3-pip python3-venv
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          
+          if [[ ${ACCOUNT} -ne 0 && ${KEY} -ne 0 ]]; then
+            python3 main.py --auto-detect-browser --account --email-api ${MAIL} --skip-update-check --no-logo --disable-progress-bar --disable-logging --repeat ${ACCOUNT}
+            python3 main.py --auto-detect-browser ${KEY_TYPE} --email-api ${MAIL} --skip-update-check --no-logo --disable-progress-bar --disable-logging --repeat ${KEY}
+            echo "Account:" >> $GITHUB_STEP_SUMMARY
+            cat ./*ACCOUNTS.txt >> $GITHUB_STEP_SUMMARY
+            echo -e "\nKey:" >> $GITHUB_STEP_SUMMARY
+            cat ./*KEYS.txt >> $GITHUB_STEP_SUMMARY
+          elif [[ ${ACCOUNT} -ne 0 ]]; then
+            python3 main.py --auto-detect-browser --account --email-api ${MAIL} --skip-update-check --no-logo --disable-progress-bar --disable-logging --repeat ${ACCOUNT}
+            echo -e "\nAccount:" >> $GITHUB_STEP_SUMMARY
+            cat ./*ACCOUNTS.txt >> $GITHUB_STEP_SUMMARY
+          elif [[ ${KEY} -ne 0 ]]; then
+            python3 main.py --auto-detect-browser ${KEY_TYPE} --email-api ${MAIL} --skip-update-check --no-logo --disable-progress-bar --disable-logging --repeat ${KEY}
+            echo -e "\nKey:" >> $GITHUB_STEP_SUMMARY
+            cat ./*KEYS.txt >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Save output as artifact
+          mkdir -p output
+          cp ./*ACCOUNTS.txt output/ 2>/dev/null || true
+          cp ./*KEYS.txt output/ 2>/dev/null || true
+
+      - name: Upload output as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-accounts
+          path: output/
